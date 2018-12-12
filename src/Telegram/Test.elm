@@ -1,4 +1,4 @@
-module Telegram.Test exposing (makeChat, makeMessage, makeUser, sendMessage)
+module Telegram.Test exposing (makeChat, makeMessage, makeUser, send, sendMessage)
 
 import Telegram
 
