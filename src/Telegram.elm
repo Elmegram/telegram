@@ -411,12 +411,13 @@ encodeMessageReplyMarkup markup =
 encodeSendMessage : SendMessage -> Encode.Value
 encodeSendMessage sendMessage =
     Encode.object
-        [ ( "chat_id", encodeId sendMessage.chat_id )
-        , ( "text", Encode.string sendMessage.text )
-        , ( "parse_mode", encodeMaybe encodeParseMode sendMessage.parse_mode )
-        , ( "reply_to_message_id", encodeMaybe encodeId sendMessage.reply_to_message_id )
-        , ( "reply_markup", encodeMaybe encodeMessageReplyMarkup sendMessage.reply_markup )
-        ]
+        ([ ( "chat_id", encodeId sendMessage.chat_id )
+         , ( "text", Encode.string sendMessage.text )
+         ]
+            ++ encodeMaybe "parse_mode" encodeParseMode sendMessage.parse_mode
+            ++ encodeMaybe "reply_to_message_id" encodeId sendMessage.reply_to_message_id
+            ++ encodeMaybe "reply_markup" encodeMessageReplyMarkup sendMessage.reply_markup
+        )
 
 
 type alias AnswerInlineQuery =
@@ -441,9 +442,8 @@ encodeAnswerInlineQuery inlineQuery =
         switchPm =
             case inlineQuery.switch_pm of
                 Just { text, parameter } ->
-                    [ ( "switch_pm_text", Encode.string text )
-                    , ( "switch_pm_parameter", encodeMaybe Encode.string parameter )
-                    ]
+                    [ ( "switch_pm_text", Encode.string text ) ]
+                        ++ encodeMaybe "switch_pm_parameter" Encode.string parameter
 
                 Nothing ->
                     []
@@ -451,10 +451,10 @@ encodeAnswerInlineQuery inlineQuery =
     Encode.object
         ([ ( "inline_query_id", encodeId inlineQuery.inline_query_id )
          , ( "results", Encode.list encodeInlineQueryResult inlineQuery.results )
-         , ( "cache_time", encodeMaybe Encode.int inlineQuery.cache_time )
-         , ( "is_personal", encodeMaybe Encode.bool inlineQuery.is_personal )
-         , ( "next_offset", encodeMaybe Encode.string inlineQuery.next_offset )
          ]
+            ++ encodeMaybe "cache_time" Encode.int inlineQuery.cache_time
+            ++ encodeMaybe "is_personal" Encode.bool inlineQuery.is_personal
+            ++ encodeMaybe "next_offset" Encode.string inlineQuery.next_offset
             ++ switchPm
         )
 
@@ -520,10 +520,10 @@ objectFromInlineQueryResultArticle article =
     [ ( "id", Encode.string article.id )
     , ( "title", Encode.string article.title )
     , ( "input_message_content", encodeInputMessageContent article.input_message_content )
-    , ( "description", encodeMaybe Encode.string article.description )
-    , ( "thumb_url", encodeMaybe (Url.toString >> Encode.string) article.thumb_url )
-    , ( "reply_markup", encodeMaybe encodeInlineKeyboard article.reply_markup )
     ]
+        ++ encodeMaybe "description" Encode.string article.description
+        ++ encodeMaybe "thumb_url" (Url.toString >> Encode.string) article.thumb_url
+        ++ encodeMaybe "reply_markup" encodeInlineKeyboard article.reply_markup
         ++ articleUrl
 
 
@@ -547,9 +547,10 @@ type alias InputTextMessageContent =
 encodeInputTextMessageContent : InputTextMessageContent -> Encode.Value
 encodeInputTextMessageContent content =
     Encode.object
-        [ ( "message_text", Encode.string content.message_text )
-        , ( "parse_mode", encodeMaybe encodeParseMode content.parse_mode )
-        ]
+        ([ ( "message_text", Encode.string content.message_text )
+         ]
+            ++ encodeMaybe "parse_mode" encodeParseMode content.parse_mode
+        )
 
 
 type alias AnswerCallbackQuery =
@@ -564,12 +565,13 @@ type alias AnswerCallbackQuery =
 encodeAnswerCallbackQuery : AnswerCallbackQuery -> Encode.Value
 encodeAnswerCallbackQuery query =
     Encode.object
-        [ ( "callback_query_id", encodeId query.callback_query_id )
-        , ( "text", encodeMaybe Encode.string query.text )
-        , ( "show_alert", Encode.bool query.show_alert )
-        , ( "url", encodeMaybe (Url.toString >> Encode.string) query.url )
-        , ( "cache_time", Encode.int query.cache_time )
-        ]
+        ([ ( "callback_query_id", encodeId query.callback_query_id )
+         , ( "show_alert", Encode.bool query.show_alert )
+         , ( "cache_time", Encode.int query.cache_time )
+         ]
+            ++ encodeMaybe "text" Encode.string query.text
+            ++ encodeMaybe "url" (Url.toString >> Encode.string) query.url
+        )
 
 
 type alias InlineKeyboard =
@@ -630,7 +632,11 @@ makeTestStringId id =
 --HELPERS
 
 
-encodeMaybe : (a -> Encode.Value) -> Maybe a -> Encode.Value
-encodeMaybe map maybe =
-    Maybe.map map maybe
-        |> Maybe.withDefault Encode.null
+encodeMaybe : String -> (a -> Encode.Value) -> Maybe a -> List ( String, Encode.Value )
+encodeMaybe fieldName map maybe =
+    case maybe of
+        Just a ->
+            [ ( fieldName, map a ) ]
+
+        Nothing ->
+            []
