@@ -47,13 +47,17 @@ import Url exposing (Url)
 
 
 type alias Update =
-    { update_id : Id UpdateId
+    { update_id : UpdateId
     , content : UpdateContent
     }
 
 
-type UpdateId
-    = UpdateId
+type alias UpdateId =
+    Id UpdateTag
+
+
+type UpdateTag
+    = UpdateTag
 
 
 type UpdateContent
