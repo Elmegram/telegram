@@ -33,6 +33,7 @@ module Telegram exposing
     , encodeAnswerCallbackQuery
     , encodeAnswerInlineQuery
     , encodeSendMessage
+    , getNextOffset
     , makeTestId
     , makeTestStringId
     )
@@ -64,6 +65,13 @@ type UpdateContent
     = MessageUpdate TextMessage
     | InlineQueryUpdate InlineQuery
     | CallbackQueryUpdate CallbackQuery
+
+
+getNextOffset : Id UpdateId -> Int
+getNextOffset updateId =
+    case updateId of
+        Id num ->
+            num + 1
 
 
 decodeUpdate : Decode.Decoder Update
