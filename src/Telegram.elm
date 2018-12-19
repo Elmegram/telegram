@@ -247,7 +247,7 @@ decodeTextMessage =
 
 
 type alias InlineQuery =
-    { id : Id InlineQueryTag
+    { id : StringId InlineQueryTag
     , from : User
     , query : String
     , offset : String
@@ -262,14 +262,14 @@ decodeInlineQuery : Decode.Decoder InlineQuery
 decodeInlineQuery =
     Decode.map4
         InlineQuery
-        (Decode.field "id" Decode.string |> Decode.map IdString)
+        (Decode.field "id" Decode.string |> Decode.map StringId)
         (Decode.field "from" decodeUser)
         (Decode.field "query" Decode.string)
         (Decode.field "offset" Decode.string)
 
 
 type alias CallbackQuery =
-    { id : Id CallbackQueryTag
+    { id : StringId CallbackQueryTag
     , from : User
     , data : String
     }
@@ -279,7 +279,7 @@ decodeCallbackQuery : Decode.Decoder CallbackQuery
 decodeCallbackQuery =
     Decode.map3
         CallbackQuery
-        (Decode.field "id" Decode.string |> Decode.map IdString)
+        (Decode.field "id" Decode.string |> Decode.map StringId)
         (Decode.field "from" decodeUser)
         (Decode.field "data" Decode.string)
 
@@ -360,7 +360,10 @@ decodeUser =
 
 type Id a
     = Id Int
-    | IdString String
+
+
+type StringId a
+    = StringId String
 
 
 encodeId : Id a -> Encode.Value
@@ -369,7 +372,11 @@ encodeId id =
         Id rawId ->
             Encode.int rawId
 
-        IdString rawId ->
+
+encodeStringId : StringId a -> Encode.Value
+encodeStringId id =
+    case id of
+        StringId rawId ->
             Encode.string rawId
 
 
@@ -425,7 +432,7 @@ encodeSendMessage sendMessage =
 
 
 type alias AnswerInlineQuery =
-    { inline_query_id : Id InlineQueryTag
+    { inline_query_id : StringId InlineQueryTag
     , results : List InlineQueryResult
     , cache_time : Maybe Int
     , is_personal : Maybe Bool
@@ -453,7 +460,7 @@ encodeAnswerInlineQuery inlineQuery =
                     []
     in
     Encode.object
-        ([ ( "inline_query_id", encodeId inlineQuery.inline_query_id )
+        ([ ( "inline_query_id", encodeStringId inlineQuery.inline_query_id )
          , ( "results", Encode.list encodeInlineQueryResult inlineQuery.results )
          ]
             ++ encodeMaybe "cache_time" Encode.int inlineQuery.cache_time
@@ -558,7 +565,7 @@ encodeInputTextMessageContent content =
 
 
 type alias AnswerCallbackQuery =
-    { callback_query_id : Id CallbackQueryTag
+    { callback_query_id : StringId CallbackQueryTag
     , text : Maybe String
     , show_alert : Bool
     , url : Maybe Url
@@ -569,7 +576,7 @@ type alias AnswerCallbackQuery =
 encodeAnswerCallbackQuery : AnswerCallbackQuery -> Encode.Value
 encodeAnswerCallbackQuery query =
     Encode.object
-        ([ ( "callback_query_id", encodeId query.callback_query_id )
+        ([ ( "callback_query_id", encodeStringId query.callback_query_id )
          , ( "show_alert", Encode.bool query.show_alert )
          , ( "cache_time", Encode.int query.cache_time )
          ]
@@ -627,9 +634,9 @@ makeTestId id =
     Id id
 
 
-makeTestStringId : String -> Id a
+makeTestStringId : String -> StringId a
 makeTestStringId id =
-    IdString id
+    StringId id
 
 
 
