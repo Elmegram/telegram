@@ -67,7 +67,7 @@ type UpdateContent
     | CallbackQueryUpdate CallbackQuery
 
 
-getNextOffset : Id UpdateId -> Int
+getNextOffset : UpdateId -> Int
 getNextOffset updateId =
     case updateId of
         Id num ->
