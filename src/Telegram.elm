@@ -78,13 +78,33 @@ decodeUpdate : Decode.Decoder Update
 decodeUpdate =
     Decode.map2
         Update
-        (Decode.field "update_id" Decode.int |> Decode.map Id)
+        (Decode.field "update_id" decodeId)
         (Decode.oneOf
             [ Decode.field "message" decodeTextMessage |> Decode.map MessageUpdate
             , Decode.field "inline_query" decodeInlineQuery |> Decode.map InlineQueryUpdate
             , Decode.field "callback_query" decodeCallbackQuery |> Decode.map CallbackQueryUpdate
             ]
         )
+
+
+encodeUpdate : Update -> Encode.Value
+encodeUpdate update =
+    let
+        content =
+            case update.content of
+                MessageUpdate textMessage ->
+                    ( "message", encodeTextMessage textMessage )
+
+                InlineQueryUpdate inlineQuery ->
+                    ( "inline_query", encodeInlineQuery inlineQuery )
+
+                CallbackQueryUpdate callbackQuery ->
+                    ( "callback_query", encodeCallbackQuery callbackQuery )
+    in
+    Encode.object
+        [ ( "update_id", encodeId update.update_id )
+        , content
+        ]
 
 
 type alias TextMessage =
@@ -130,14 +150,19 @@ decodeBounds =
         (Decode.field "length" Decode.int)
 
 
+encodeBounds : Bounds -> List ( String, Encode.Value )
+encodeBounds bounds =
+    [ ( "offset", Encode.int bounds.offset )
+    , ( "length", Encode.int bounds.length )
+    ]
+
+
 decodeMessageEntity : Decode.Decoder MessageEntity
 decodeMessageEntity =
     let
         simple =
             Decode.map2
-                (\type_ bounds ->
-                    ( type_, bounds )
-                )
+                Tuple.pair
                 (Decode.field "type" Decode.string)
                 decodeBounds
                 |> Decode.andThen
@@ -238,6 +263,56 @@ decodeMessageEntity =
         ]
 
 
+encodeMessageEntity : MessageEntity -> Encode.Value
+encodeMessageEntity messageEntity =
+    let
+        simple field bounds =
+            complex field bounds []
+
+        complex field bounds extra =
+            Encode.object ([ ( "type", Encode.string field ) ] ++ extra ++ encodeBounds bounds)
+    in
+    case messageEntity of
+        Mention bounds ->
+            simple "mention" bounds
+
+        Hashtag bounds ->
+            simple "hashtag" bounds
+
+        Cashtag bounds ->
+            simple "cashtag" bounds
+
+        BotCommand bounds ->
+            simple "bot_command" bounds
+
+        Url bounds ->
+            simple "url" bounds
+
+        Email bounds ->
+            simple "email" bounds
+
+        PhoneNumber bounds ->
+            simple "phone_number" bounds
+
+        Bold bounds ->
+            simple "bold" bounds
+
+        Italic bounds ->
+            simple "italic" bounds
+
+        Code bounds ->
+            simple "code" bounds
+
+        Pre bounds ->
+            simple "pre" bounds
+
+        TextLink url bounds ->
+            complex "text_link" bounds [ ( "url", Encode.string <| Url.toString url ) ]
+
+        TextMention user bounds ->
+            complex "text_mention" bounds [ ( "user", encodeUser user ) ]
+
+
 decodeTextMessage : Decode.Decoder TextMessage
 decodeTextMessage =
     let
@@ -247,11 +322,31 @@ decodeTextMessage =
     in
     Decode.map5
         TextMessage
-        (Decode.field "message_id" Decode.int |> Decode.map Id)
+        (Decode.field "message_id" decodeId)
         (Decode.field "date" Decode.int)
         (Decode.field "chat" decodeChat)
         (Decode.field "text" Decode.string)
         decodeEntities
+
+
+encodeTextMessage : TextMessage -> Encode.Value
+encodeTextMessage textMessage =
+    let
+        entities =
+            if List.isEmpty textMessage.entities then
+                [ ( "entities", Encode.list encodeMessageEntity textMessage.entities ) ]
+
+            else
+                []
+    in
+    Encode.object
+        ([ ( "message_id", encodeId textMessage.message_id )
+         , ( "date", Encode.int textMessage.date )
+         , ( "chat", encodeChat textMessage.chat )
+         , ( "text", Encode.string textMessage.text )
+         ]
+            ++ entities
+        )
 
 
 type alias InlineQuery =
@@ -270,10 +365,20 @@ decodeInlineQuery : Decode.Decoder InlineQuery
 decodeInlineQuery =
     Decode.map4
         InlineQuery
-        (Decode.field "id" Decode.string |> Decode.map StringId)
+        (Decode.field "id" decodeStringId)
         (Decode.field "from" decodeUser)
         (Decode.field "query" Decode.string)
         (Decode.field "offset" Decode.string)
+
+
+encodeInlineQuery : InlineQuery -> Encode.Value
+encodeInlineQuery inlineQuery =
+    Encode.object
+        [ ( "id", encodeStringId inlineQuery.id )
+        , ( "from", encodeUser inlineQuery.from )
+        , ( "query", Encode.string inlineQuery.query )
+        , ( "offset", Encode.string inlineQuery.offset )
+        ]
 
 
 type alias CallbackQuery =
@@ -287,9 +392,18 @@ decodeCallbackQuery : Decode.Decoder CallbackQuery
 decodeCallbackQuery =
     Decode.map3
         CallbackQuery
-        (Decode.field "id" Decode.string |> Decode.map StringId)
+        (Decode.field "id" decodeStringId)
         (Decode.field "from" decodeUser)
         (Decode.field "data" Decode.string)
+
+
+encodeCallbackQuery : CallbackQuery -> Encode.Value
+encodeCallbackQuery callbackQuery =
+    Encode.object
+        [ ( "id", encodeStringId callbackQuery.id )
+        , ( "from", encodeUser callbackQuery.from )
+        , ( "data", Encode.string callbackQuery.data )
+        ]
 
 
 type CallbackQueryTag
@@ -313,11 +427,31 @@ type ChatType
     | Channel
 
 
+encodeChatType : ChatType -> Encode.Value
+encodeChatType chatType =
+    let
+        stringified =
+            case chatType of
+                Private ->
+                    "private"
+
+                Group ->
+                    "group"
+
+                Supergroup ->
+                    "supergroup"
+
+                Channel ->
+                    "channel"
+    in
+    Encode.string stringified
+
+
 decodeChat : Decode.Decoder Chat
 decodeChat =
     Decode.map2
         Chat
-        (Decode.field "id" Decode.int |> Decode.map Id)
+        (Decode.field "id" decodeId)
         (Decode.field "type" Decode.string
             |> Decode.andThen
                 (\typeString ->
@@ -340,6 +474,14 @@ decodeChat =
         )
 
 
+encodeChat : Chat -> Encode.Value
+encodeChat chat =
+    Encode.object
+        [ ( "id", encodeId chat.id )
+        , ( "type", encodeChatType chat.type_ )
+        ]
+
+
 type alias User =
     { id : Id UserTag
     , is_bot : Bool
@@ -358,12 +500,25 @@ decodeUser : Decode.Decoder User
 decodeUser =
     Decode.map6
         User
-        (Decode.field "id" Decode.int |> Decode.map Id)
+        (Decode.field "id" decodeId)
         (Decode.field "is_bot" Decode.bool)
         (Decode.field "first_name" Decode.string)
         (Decode.maybe <| Decode.field "last_name" Decode.string)
         (Decode.maybe <| Decode.field "username" Decode.string)
         (Decode.maybe <| Decode.field "language_code" Decode.string)
+
+
+encodeUser : User -> Encode.Value
+encodeUser user =
+    Encode.object
+        ([ ( "id", encodeId user.id )
+         , ( "is_bot", Encode.bool user.is_bot )
+         , ( "first_name", Encode.string user.first_name )
+         ]
+            ++ encodeMaybe "last_name" Encode.string user.last_name
+            ++ encodeMaybe "username" Encode.string user.username
+            ++ encodeMaybe "language_code" Encode.string user.language_code
+        )
 
 
 type Id a
@@ -374,11 +529,21 @@ type StringId a
     = StringId String
 
 
+decodeId : Decode.Decoder (Id a)
+decodeId =
+    Decode.int |> Decode.map Id
+
+
 encodeId : Id a -> Encode.Value
 encodeId id =
     case id of
         Id rawId ->
             Encode.int rawId
+
+
+decodeStringId : Decode.Decoder (StringId a)
+decodeStringId =
+    Decode.string |> Decode.map StringId
 
 
 encodeStringId : StringId a -> Encode.Value
