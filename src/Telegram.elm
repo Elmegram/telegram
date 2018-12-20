@@ -32,7 +32,15 @@ module Telegram exposing
     , decodeUser
     , encodeAnswerCallbackQuery
     , encodeAnswerInlineQuery
+    , encodeBounds
+    , encodeChat
+    , encodeInlineQuery
+    , encodeMessageEntity
     , encodeSendMessage
+    , encodeTextMessage
+    , encodeUpdate
+    , encodeUser
+    , getNextOffset
     , makeTestId
     , makeTestStringId
     )
@@ -47,13 +55,17 @@ import Url exposing (Url)
 
 
 type alias Update =
-    { update_id : Id UpdateId
+    { update_id : UpdateId
     , content : UpdateContent
     }
 
 
-type UpdateId
-    = UpdateId
+type alias UpdateId =
+    Id UpdateTag
+
+
+type UpdateTag
+    = UpdateTag
 
 
 type UpdateContent
@@ -62,17 +74,44 @@ type UpdateContent
     | CallbackQueryUpdate CallbackQuery
 
 
+getNextOffset : UpdateId -> Int
+getNextOffset updateId =
+    case updateId of
+        Id num ->
+            num + 1
+
+
 decodeUpdate : Decode.Decoder Update
 decodeUpdate =
     Decode.map2
         Update
-        (Decode.field "update_id" Decode.int |> Decode.map Id)
+        (Decode.field "update_id" decodeId)
         (Decode.oneOf
             [ Decode.field "message" decodeTextMessage |> Decode.map MessageUpdate
             , Decode.field "inline_query" decodeInlineQuery |> Decode.map InlineQueryUpdate
             , Decode.field "callback_query" decodeCallbackQuery |> Decode.map CallbackQueryUpdate
             ]
         )
+
+
+encodeUpdate : Update -> Encode.Value
+encodeUpdate update =
+    let
+        content =
+            case update.content of
+                MessageUpdate textMessage ->
+                    ( "message", encodeTextMessage textMessage )
+
+                InlineQueryUpdate inlineQuery ->
+                    ( "inline_query", encodeInlineQuery inlineQuery )
+
+                CallbackQueryUpdate callbackQuery ->
+                    ( "callback_query", encodeCallbackQuery callbackQuery )
+    in
+    Encode.object
+        [ ( "update_id", encodeId update.update_id )
+        , content
+        ]
 
 
 type alias TextMessage =
@@ -118,14 +157,19 @@ decodeBounds =
         (Decode.field "length" Decode.int)
 
 
+encodeBounds : Bounds -> List ( String, Encode.Value )
+encodeBounds bounds =
+    [ ( "offset", Encode.int bounds.offset )
+    , ( "length", Encode.int bounds.length )
+    ]
+
+
 decodeMessageEntity : Decode.Decoder MessageEntity
 decodeMessageEntity =
     let
         simple =
             Decode.map2
-                (\type_ bounds ->
-                    ( type_, bounds )
-                )
+                Tuple.pair
                 (Decode.field "type" Decode.string)
                 decodeBounds
                 |> Decode.andThen
@@ -226,6 +270,56 @@ decodeMessageEntity =
         ]
 
 
+encodeMessageEntity : MessageEntity -> Encode.Value
+encodeMessageEntity messageEntity =
+    let
+        simple field bounds =
+            complex field bounds []
+
+        complex field bounds extra =
+            Encode.object ([ ( "type", Encode.string field ) ] ++ extra ++ encodeBounds bounds)
+    in
+    case messageEntity of
+        Mention bounds ->
+            simple "mention" bounds
+
+        Hashtag bounds ->
+            simple "hashtag" bounds
+
+        Cashtag bounds ->
+            simple "cashtag" bounds
+
+        BotCommand bounds ->
+            simple "bot_command" bounds
+
+        Url bounds ->
+            simple "url" bounds
+
+        Email bounds ->
+            simple "email" bounds
+
+        PhoneNumber bounds ->
+            simple "phone_number" bounds
+
+        Bold bounds ->
+            simple "bold" bounds
+
+        Italic bounds ->
+            simple "italic" bounds
+
+        Code bounds ->
+            simple "code" bounds
+
+        Pre bounds ->
+            simple "pre" bounds
+
+        TextLink url bounds ->
+            complex "text_link" bounds [ ( "url", Encode.string <| Url.toString url ) ]
+
+        TextMention user bounds ->
+            complex "text_mention" bounds [ ( "user", encodeUser user ) ]
+
+
 decodeTextMessage : Decode.Decoder TextMessage
 decodeTextMessage =
     let
@@ -235,15 +329,35 @@ decodeTextMessage =
     in
     Decode.map5
         TextMessage
-        (Decode.field "message_id" Decode.int |> Decode.map Id)
+        (Decode.field "message_id" decodeId)
         (Decode.field "date" Decode.int)
         (Decode.field "chat" decodeChat)
         (Decode.field "text" Decode.string)
         decodeEntities
 
 
+encodeTextMessage : TextMessage -> Encode.Value
+encodeTextMessage textMessage =
+    let
+        entities =
+            if List.isEmpty textMessage.entities then
+                [ ( "entities", Encode.list encodeMessageEntity textMessage.entities ) ]
+
+            else
+                []
+    in
+    Encode.object
+        ([ ( "message_id", encodeId textMessage.message_id )
+         , ( "date", Encode.int textMessage.date )
+         , ( "chat", encodeChat textMessage.chat )
+         , ( "text", Encode.string textMessage.text )
+         ]
+            ++ entities
+        )
+
+
 type alias InlineQuery =
-    { id : Id InlineQueryTag
+    { id : StringId InlineQueryTag
     , from : User
     , query : String
     , offset : String
@@ -258,14 +372,24 @@ decodeInlineQuery : Decode.Decoder InlineQuery
 decodeInlineQuery =
     Decode.map4
         InlineQuery
-        (Decode.field "id" Decode.string |> Decode.map IdString)
+        (Decode.field "id" decodeStringId)
         (Decode.field "from" decodeUser)
         (Decode.field "query" Decode.string)
         (Decode.field "offset" Decode.string)
 
 
+encodeInlineQuery : InlineQuery -> Encode.Value
+encodeInlineQuery inlineQuery =
+    Encode.object
+        [ ( "id", encodeStringId inlineQuery.id )
+        , ( "from", encodeUser inlineQuery.from )
+        , ( "query", Encode.string inlineQuery.query )
+        , ( "offset", Encode.string inlineQuery.offset )
+        ]
+
+
 type alias CallbackQuery =
-    { id : Id CallbackQueryTag
+    { id : StringId CallbackQueryTag
     , from : User
     , data : String
     }
@@ -275,9 +399,18 @@ decodeCallbackQuery : Decode.Decoder CallbackQuery
 decodeCallbackQuery =
     Decode.map3
         CallbackQuery
-        (Decode.field "id" Decode.string |> Decode.map IdString)
+        (Decode.field "id" decodeStringId)
         (Decode.field "from" decodeUser)
         (Decode.field "data" Decode.string)
+
+
+encodeCallbackQuery : CallbackQuery -> Encode.Value
+encodeCallbackQuery callbackQuery =
+    Encode.object
+        [ ( "id", encodeStringId callbackQuery.id )
+        , ( "from", encodeUser callbackQuery.from )
+        , ( "data", Encode.string callbackQuery.data )
+        ]
 
 
 type CallbackQueryTag
@@ -301,11 +434,31 @@ type ChatType
     | Channel
 
 
+encodeChatType : ChatType -> Encode.Value
+encodeChatType chatType =
+    let
+        stringified =
+            case chatType of
+                Private ->
+                    "private"
+
+                Group ->
+                    "group"
+
+                Supergroup ->
+                    "supergroup"
+
+                Channel ->
+                    "channel"
+    in
+    Encode.string stringified
+
+
 decodeChat : Decode.Decoder Chat
 decodeChat =
     Decode.map2
         Chat
-        (Decode.field "id" Decode.int |> Decode.map Id)
+        (Decode.field "id" decodeId)
         (Decode.field "type" Decode.string
             |> Decode.andThen
                 (\typeString ->
@@ -328,6 +481,14 @@ decodeChat =
         )
 
 
+encodeChat : Chat -> Encode.Value
+encodeChat chat =
+    Encode.object
+        [ ( "id", encodeId chat.id )
+        , ( "type", encodeChatType chat.type_ )
+        ]
+
+
 type alias User =
     { id : Id UserTag
     , is_bot : Bool
@@ -346,7 +507,7 @@ decodeUser : Decode.Decoder User
 decodeUser =
     Decode.map6
         User
-        (Decode.field "id" Decode.int |> Decode.map Id)
+        (Decode.field "id" decodeId)
         (Decode.field "is_bot" Decode.bool)
         (Decode.field "first_name" Decode.string)
         (Decode.maybe <| Decode.field "last_name" Decode.string)
@@ -354,9 +515,30 @@ decodeUser =
         (Decode.maybe <| Decode.field "language_code" Decode.string)
 
 
+encodeUser : User -> Encode.Value
+encodeUser user =
+    Encode.object
+        ([ ( "id", encodeId user.id )
+         , ( "is_bot", Encode.bool user.is_bot )
+         , ( "first_name", Encode.string user.first_name )
+         ]
+            ++ encodeMaybe "last_name" Encode.string user.last_name
+            ++ encodeMaybe "username" Encode.string user.username
+            ++ encodeMaybe "language_code" Encode.string user.language_code
+        )
+
+
 type Id a
     = Id Int
-    | IdString String
+
+
+type StringId a
+    = StringId String
+
+
+decodeId : Decode.Decoder (Id a)
+decodeId =
+    Decode.int |> Decode.map Id
 
 
 encodeId : Id a -> Encode.Value
@@ -365,7 +547,16 @@ encodeId id =
         Id rawId ->
             Encode.int rawId
 
-        IdString rawId ->
+
+decodeStringId : Decode.Decoder (StringId a)
+decodeStringId =
+    Decode.string |> Decode.map StringId
+
+
+encodeStringId : StringId a -> Encode.Value
+encodeStringId id =
+    case id of
+        StringId rawId ->
             Encode.string rawId
 
 
@@ -411,16 +602,17 @@ encodeMessageReplyMarkup markup =
 encodeSendMessage : SendMessage -> Encode.Value
 encodeSendMessage sendMessage =
     Encode.object
-        [ ( "chat_id", encodeId sendMessage.chat_id )
-        , ( "text", Encode.string sendMessage.text )
-        , ( "parse_mode", encodeMaybe encodeParseMode sendMessage.parse_mode )
-        , ( "reply_to_message_id", encodeMaybe encodeId sendMessage.reply_to_message_id )
-        , ( "reply_markup", encodeMaybe encodeMessageReplyMarkup sendMessage.reply_markup )
-        ]
+        ([ ( "chat_id", encodeId sendMessage.chat_id )
+         , ( "text", Encode.string sendMessage.text )
+         ]
+            ++ encodeMaybe "parse_mode" encodeParseMode sendMessage.parse_mode
+            ++ encodeMaybe "reply_to_message_id" encodeId sendMessage.reply_to_message_id
+            ++ encodeMaybe "reply_markup" encodeMessageReplyMarkup sendMessage.reply_markup
+        )
 
 
 type alias AnswerInlineQuery =
-    { inline_query_id : Id InlineQueryTag
+    { inline_query_id : StringId InlineQueryTag
     , results : List InlineQueryResult
     , cache_time : Maybe Int
     , is_personal : Maybe Bool
@@ -441,20 +633,19 @@ encodeAnswerInlineQuery inlineQuery =
         switchPm =
             case inlineQuery.switch_pm of
                 Just { text, parameter } ->
-                    [ ( "switch_pm_text", Encode.string text )
-                    , ( "switch_pm_parameter", encodeMaybe Encode.string parameter )
-                    ]
+                    [ ( "switch_pm_text", Encode.string text ) ]
+                        ++ encodeMaybe "switch_pm_parameter" Encode.string parameter
 
                 Nothing ->
                     []
     in
     Encode.object
-        ([ ( "inline_query_id", encodeId inlineQuery.inline_query_id )
+        ([ ( "inline_query_id", encodeStringId inlineQuery.inline_query_id )
          , ( "results", Encode.list encodeInlineQueryResult inlineQuery.results )
-         , ( "cache_time", encodeMaybe Encode.int inlineQuery.cache_time )
-         , ( "is_personal", encodeMaybe Encode.bool inlineQuery.is_personal )
-         , ( "next_offset", encodeMaybe Encode.string inlineQuery.next_offset )
          ]
+            ++ encodeMaybe "cache_time" Encode.int inlineQuery.cache_time
+            ++ encodeMaybe "is_personal" Encode.bool inlineQuery.is_personal
+            ++ encodeMaybe "next_offset" Encode.string inlineQuery.next_offset
             ++ switchPm
         )
 
@@ -520,10 +711,10 @@ objectFromInlineQueryResultArticle article =
     [ ( "id", Encode.string article.id )
     , ( "title", Encode.string article.title )
     , ( "input_message_content", encodeInputMessageContent article.input_message_content )
-    , ( "description", encodeMaybe Encode.string article.description )
-    , ( "thumb_url", encodeMaybe (Url.toString >> Encode.string) article.thumb_url )
-    , ( "reply_markup", encodeMaybe encodeInlineKeyboard article.reply_markup )
     ]
+        ++ encodeMaybe "description" Encode.string article.description
+        ++ encodeMaybe "thumb_url" (Url.toString >> Encode.string) article.thumb_url
+        ++ encodeMaybe "reply_markup" encodeInlineKeyboard article.reply_markup
         ++ articleUrl
 
 
@@ -547,13 +738,14 @@ type alias InputTextMessageContent =
 encodeInputTextMessageContent : InputTextMessageContent -> Encode.Value
 encodeInputTextMessageContent content =
     Encode.object
-        [ ( "message_text", Encode.string content.message_text )
-        , ( "parse_mode", encodeMaybe encodeParseMode content.parse_mode )
-        ]
+        ([ ( "message_text", Encode.string content.message_text )
+         ]
+            ++ encodeMaybe "parse_mode" encodeParseMode content.parse_mode
+        )
 
 
 type alias AnswerCallbackQuery =
-    { callback_query_id : Id CallbackQueryTag
+    { callback_query_id : StringId CallbackQueryTag
     , text : Maybe String
     , show_alert : Bool
     , url : Maybe Url
@@ -564,12 +756,13 @@ type alias AnswerCallbackQuery =
 encodeAnswerCallbackQuery : AnswerCallbackQuery -> Encode.Value
 encodeAnswerCallbackQuery query =
     Encode.object
-        [ ( "callback_query_id", encodeId query.callback_query_id )
-        , ( "text", encodeMaybe Encode.string query.text )
-        , ( "show_alert", Encode.bool query.show_alert )
-        , ( "url", encodeMaybe (Url.toString >> Encode.string) query.url )
-        , ( "cache_time", Encode.int query.cache_time )
-        ]
+        ([ ( "callback_query_id", encodeStringId query.callback_query_id )
+         , ( "show_alert", Encode.bool query.show_alert )
+         , ( "cache_time", Encode.int query.cache_time )
+         ]
+            ++ encodeMaybe "text" Encode.string query.text
+            ++ encodeMaybe "url" (Url.toString >> Encode.string) query.url
+        )
 
 
 type alias InlineKeyboard =
@@ -621,16 +814,20 @@ makeTestId id =
     Id id
 
 
-makeTestStringId : String -> Id a
+makeTestStringId : String -> StringId a
 makeTestStringId id =
-    IdString id
+    StringId id
 
 
 
 --HELPERS
 
 
-encodeMaybe : (a -> Encode.Value) -> Maybe a -> Encode.Value
-encodeMaybe map maybe =
-    Maybe.map map maybe
-        |> Maybe.withDefault Encode.null
+encodeMaybe : String -> (a -> Encode.Value) -> Maybe a -> List ( String, Encode.Value )
+encodeMaybe fieldName map maybe =
+    case maybe of
+        Just a ->
+            [ ( fieldName, map a ) ]
+
+        Nothing ->
+            []
