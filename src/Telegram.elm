@@ -32,7 +32,14 @@ module Telegram exposing
     , decodeUser
     , encodeAnswerCallbackQuery
     , encodeAnswerInlineQuery
+    , encodeBounds
+    , encodeChat
+    , encodeInlineQuery
+    , encodeMessageEntity
     , encodeSendMessage
+    , encodeTextMessage
+    , encodeUpdate
+    , encodeUser
     , getNextOffset
     , makeTestId
     , makeTestStringId
